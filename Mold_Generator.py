@@ -43,6 +43,31 @@ def mm_to_bu(mm_value, context):
     else:  # Scene is in meters or other units
         return mm_value * 0.001 / unit_scale
 
+# Utility conversion from Blender units to millimeters
+def bu_to_mm(bu_value, context):
+    """Convert Blender Units to millimeters."""
+    unit_scale = context.scene.unit_settings.scale_length
+    if abs(unit_scale - 0.001) < 0.0001:
+        return bu_value
+    else:
+        return bu_value * unit_scale * 1000.0
+
+# Utility to get world-space bounds of an object
+def get_world_bounds(obj):
+    """Return (min, max) world coordinates of ``obj``'s bounding box."""
+    bbox = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    min_co = Vector((
+        min(v[0] for v in bbox),
+        min(v[1] for v in bbox),
+        min(v[2] for v in bbox)
+    ))
+    max_co = Vector((
+        max(v[0] for v in bbox),
+        max(v[1] for v in bbox),
+        max(v[2] for v in bbox)
+    ))
+    return min_co, max_co
+
 # Define a Property Group to hold the add-on properties
 class MoldGeneratorProperties(PropertyGroup):
     padding: FloatProperty(
@@ -248,14 +273,23 @@ def focus_on_object(context, obj):
 
 # Function to apply and remove a Boolean modifier
 def apply_boolean_modifier(obj, target, operation='DIFFERENCE'):
-    """Applies a Boolean modifier to the specified object."""
+    """Applies a Boolean modifier to ``obj`` using ``target``."""
     debug_print(f"Applying Boolean modifier '{operation}' with target '{target.name}'.")
-    
-    # Ensure proper scale
+
+    # Ensure both objects have applied scale to avoid boolean issues
     obj.select_set(True)
     bpy.context.view_layer.objects.active = obj
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-    
+
+    bpy.ops.object.select_all(action='DESELECT')
+    target.select_set(True)
+    bpy.context.view_layer.objects.active = target
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
     bool_mod = obj.modifiers.new(name='Boolean', type='BOOLEAN')
     bool_mod.operation = operation
     bool_mod.object = target
@@ -270,8 +304,31 @@ def apply_boolean_modifier(obj, target, operation='DIFFERENCE'):
         obj.modifiers.remove(bool_mod)
         return False
 
+# Heuristic to estimate a suitable key radius in millimeters
+def estimate_key_radius(mold_obj, original_obj, cutting_axis, key_padding, context):
+    axis_idx = {'X': 0, 'Y': 1, 'Z': 2}[cutting_axis]
+    other_axes = [i for i in [0, 1, 2] if i != axis_idx]
+
+    mold_min, mold_max = get_world_bounds(mold_obj)
+    orig_min, orig_max = get_world_bounds(original_obj)
+
+    pad = mm_to_bu(key_padding, context)
+
+    margin1 = min(orig_min[other_axes[0]] - mold_min[other_axes[0]],
+                  mold_max[other_axes[0]] - orig_max[other_axes[0]]) - pad
+    margin2 = min(orig_min[other_axes[1]] - mold_min[other_axes[1]],
+                  mold_max[other_axes[1]] - orig_max[other_axes[1]]) - pad
+
+    if margin1 <= 0 or margin2 <= 0:
+        return 1.0  # Fallback to small radius (mm)
+
+    radius_bu = max(min(margin1, margin2) * 0.4, mm_to_bu(0.5, context))
+    radius_mm = bu_to_mm(radius_bu, context)
+    return max(0.5, min(radius_mm, 10.0))
+
 # Simplified function to find valid key positions
-def find_key_positions(mold_obj, original_obj, cutting_axis, num_keys, key_radius, key_padding, min_spacing, context):
+def find_key_positions(mold_obj, original_obj, cutting_axis, num_keys, key_radius,
+                       key_padding, min_spacing, context, cut_pos=None):
     """Find valid positions for alignment keys using a simple grid approach."""
     debug_print("Finding key positions using simplified grid approach")
     
@@ -309,8 +366,9 @@ def find_key_positions(mold_obj, original_obj, cutting_axis, num_keys, key_radiu
         max(v[2] for v in orig_bbox)
     ))
     
-    # Calculate the cutting plane position
-    cut_pos = (mold_min[axis_index] + mold_max[axis_index]) / 2.0
+    # Cutting plane position provided by caller or derived from mold bounds
+    if cut_pos is None:
+        cut_pos = (mold_min[axis_index] + mold_max[axis_index]) / 2.0
     
     # Define safe zones - areas outside the original object's bounding box projection
     axis1, axis2 = other_axes
@@ -673,12 +731,27 @@ class OBJECT_OT_AddKeysOperator(Operator):
                     bpy.data.objects.remove(obj, do_unlink=True)
                 bpy.data.collections.remove(keys_col)
 
-        # Find key positions
+        # Determine cutting plane position from both mold halves
+        axis_idx = {'X': 0, 'Y': 1, 'Z': 2}[props.cutting_axis]
+        min_a, max_a = get_world_bounds(mold_A)
+        min_b, max_b = get_world_bounds(mold_B)
+        center_a = (min_a + max_a) / 2.0
+        center_b = (min_b + max_b) / 2.0
+        cut_plane = (center_a[axis_idx] + center_b[axis_idx]) / 2.0
+
+        # Estimate a suitable key radius based on available space
+        auto_radius = estimate_key_radius(
+            mold_A, original_obj, props.cutting_axis,
+            props.key_padding, context
+        )
+        props.key_radius = auto_radius
+
+        # Find key positions with the computed radius
         key_positions = find_key_positions(
             mold_A, original_obj, props.cutting_axis,
-            props.num_keys, props.key_radius,
+            props.num_keys, auto_radius,
             props.key_padding, props.min_key_spacing,
-            context
+            context, cut_plane
         )
 
         if not key_positions:
@@ -735,10 +808,15 @@ class OBJECT_OT_AddKeysOperator(Operator):
             for coll in key_B.users_collection:
                 coll.objects.unlink(key_B)
             keys_B_col.objects.link(key_B)
-            
-            # Add copy transforms constraint
-            constraint = key_B.constraints.new(type='COPY_TRANSFORMS')
-            constraint.target = key_A
+
+            # Slightly enlarge the indentation key for better fit
+            key_B.scale *= 1.03
+
+            # Keep location/rotation synced but preserve scale
+            c_loc = key_B.constraints.new(type='COPY_LOCATION')
+            c_loc.target = key_A
+            c_rot = key_B.constraints.new(type='COPY_ROTATION')
+            c_rot.target = key_A
 
         props.mold_state = 'KEYS_ADDED'
         
