@@ -43,14 +43,6 @@ def mm_to_bu(mm_value, context):
     else:  # Scene is in meters or other units
         return mm_value * 0.001 / unit_scale
 
-# Utility conversion from Blender units to millimeters
-def bu_to_mm(bu_value, context):
-    """Convert Blender Units to millimeters."""
-    unit_scale = context.scene.unit_settings.scale_length
-    if abs(unit_scale - 0.001) < 0.0001:
-        return bu_value
-    else:
-        return bu_value * unit_scale * 1000.0
 
 # Utility to get world-space bounds of an object
 def get_world_bounds(obj):
@@ -739,14 +731,7 @@ class OBJECT_OT_AddKeysOperator(Operator):
         center_b = (min_b + max_b) / 2.0
         cut_plane = (center_a[axis_idx] + center_b[axis_idx]) / 2.0
 
-        # Estimate a suitable key radius based on available space
-        auto_radius = estimate_key_radius(
-            mold_A, original_obj, props.cutting_axis,
-            props.key_padding, context
-        )
-        props.key_radius = auto_radius
 
-        # Find key positions with the computed radius
         key_positions = find_key_positions(
             mold_A, original_obj, props.cutting_axis,
             props.num_keys, auto_radius,
