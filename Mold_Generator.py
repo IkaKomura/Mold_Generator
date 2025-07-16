@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Mold Generator",
-    "author": "Claude (Anthropic)",
-    "version": (3, 1, 2),
+    "author": "jjjkk",
+    "version": (3, 1, 3),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Mold Generator",
     "description": "Generates a mold for the selected object with optional keys",
