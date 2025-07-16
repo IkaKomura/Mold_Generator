@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Mold Generator",
-    "author": "jjjkk",
-    "version": (3, 1, 3),
+    "author": "jjjkkul",
+    "version": (3, 1, 5),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Mold Generator",
     "description": "Generates a mold for the selected object with optional keys",
@@ -72,13 +72,13 @@ def get_world_bounds(obj):
 
 # Define a Property Group to hold the add-on properties
 class MoldGeneratorProperties(PropertyGroup):
-    padding: FloatProperty(
+    padding = FloatProperty(
         name="Padding (mm)",
         description="Extra space around the object in millimeters",
-        default=0.0,
+        default=10.0,  # Default padding
         min=0.0,
         max=100.0,  # Max 100mm padding
-        soft_max=20.0,  # Soft max at 20mm for UI
+        soft_max=50.0,  # Soft max at 20mm for UI
         step=0.1,
         precision=1,
         unit='LENGTH',
@@ -116,9 +116,9 @@ class MoldGeneratorProperties(PropertyGroup):
     key_radius: FloatProperty(
         name="Key Radius (mm)",
         description="Radius of alignment keys in millimeters",
-        default=2.0,
+        default=8.0,
         min=0.5,
-        max=10.0,
+        max=50.0,
         step=0.1,
         precision=1,
         unit='LENGTH',
