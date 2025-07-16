@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Mold Generator",
     "author": "Claude (Anthropic)",
-    "version": (3, 1, 1),
+    "version": (3, 1, 2),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > Mold Generator",
     "description": "Generates a mold for the selected object with optional keys",
@@ -43,6 +43,7 @@ def mm_to_bu(mm_value, context):
     else:  # Scene is in meters or other units
         return mm_value * 0.001 / unit_scale
 
+
 # Utility conversion from Blender units to millimeters
 def bu_to_mm(bu_value, context):
     """Convert Blender Units to millimeters."""
@@ -51,6 +52,7 @@ def bu_to_mm(bu_value, context):
         return bu_value
     else:
         return bu_value * unit_scale * 1000.0
+
 
 # Utility to get world-space bounds of an object
 def get_world_bounds(obj):
@@ -739,6 +741,7 @@ class OBJECT_OT_AddKeysOperator(Operator):
         center_b = (min_b + max_b) / 2.0
         cut_plane = (center_a[axis_idx] + center_b[axis_idx]) / 2.0
 
+
         # Estimate a suitable key radius based on available space
         props.key_radius = estimate_key_radius(
             mold_A, original_obj, props.cutting_axis,
@@ -746,9 +749,10 @@ class OBJECT_OT_AddKeysOperator(Operator):
         )
 
         # Find key positions with the computed radius
+
         key_positions = find_key_positions(
             mold_A, original_obj, props.cutting_axis,
-            props.num_keys, props.key_radius,
+            props.num_keys, auto_radius,
             props.key_padding, props.min_key_spacing,
             context, cut_plane
         )
