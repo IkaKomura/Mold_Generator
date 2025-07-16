@@ -743,12 +743,23 @@ class OBJECT_OT_AddKeysOperator(Operator):
 
 
         # Estimate a suitable key radius based on available space
+        auto_radius = estimate_key_radius(
+            mold_A, original_obj, props.cutting_axis,
+            props.key_padding, context
+        )
+        props.key_radius = auto_radius
+
+        # Find key positions with the computed radius
+
+
+        # Estimate a suitable key radius based on available space
         props.key_radius = estimate_key_radius(
             mold_A, original_obj, props.cutting_axis,
             props.key_padding, context
         )
 
         # Find key positions with the computed radius
+
 
         key_positions = find_key_positions(
             mold_A, original_obj, props.cutting_axis,
@@ -762,7 +773,7 @@ class OBJECT_OT_AddKeysOperator(Operator):
             return {'CANCELLED'}
 
         # Convert key radius to Blender units
-        key_radius_bu = mm_to_bu(props.key_radius, context)
+        key_radius_bu = mm_to_bu(auto_radius, context)
 
         # Create keys collections
         keys_A_col = bpy.data.collections.new("keys.A")
