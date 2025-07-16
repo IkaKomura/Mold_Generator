@@ -43,6 +43,7 @@ def mm_to_bu(mm_value, context):
     else:  # Scene is in meters or other units
         return mm_value * 0.001 / unit_scale
 
+
 # Utility to get world-space bounds of an object
 def get_world_bounds(obj):
     """Return (min, max) world coordinates of ``obj``'s bounding box."""
@@ -294,6 +295,28 @@ def apply_boolean_modifier(obj, target, operation='DIFFERENCE'):
         debug_print(f"Failed to apply Boolean modifier '{operation}' to '{obj.name}': {e}")
         obj.modifiers.remove(bool_mod)
         return False
+
+# Heuristic to estimate a suitable key radius in millimeters
+def estimate_key_radius(mold_obj, original_obj, cutting_axis, key_padding, context):
+    axis_idx = {'X': 0, 'Y': 1, 'Z': 2}[cutting_axis]
+    other_axes = [i for i in [0, 1, 2] if i != axis_idx]
+
+    mold_min, mold_max = get_world_bounds(mold_obj)
+    orig_min, orig_max = get_world_bounds(original_obj)
+
+    pad = mm_to_bu(key_padding, context)
+
+    margin1 = min(orig_min[other_axes[0]] - mold_min[other_axes[0]],
+                  mold_max[other_axes[0]] - orig_max[other_axes[0]]) - pad
+    margin2 = min(orig_min[other_axes[1]] - mold_min[other_axes[1]],
+                  mold_max[other_axes[1]] - orig_max[other_axes[1]]) - pad
+
+    if margin1 <= 0 or margin2 <= 0:
+        return 1.0  # Fallback to small radius (mm)
+
+    radius_bu = max(min(margin1, margin2) * 0.4, mm_to_bu(0.5, context))
+    radius_mm = bu_to_mm(radius_bu, context)
+    return max(0.5, min(radius_mm, 10.0))
 
 # Simplified function to find valid key positions
 def find_key_positions(mold_obj, original_obj, cutting_axis, num_keys, key_radius,
@@ -708,10 +731,10 @@ class OBJECT_OT_AddKeysOperator(Operator):
         center_b = (min_b + max_b) / 2.0
         cut_plane = (center_a[axis_idx] + center_b[axis_idx]) / 2.0
 
-        # Find key positions
+
         key_positions = find_key_positions(
             mold_A, original_obj, props.cutting_axis,
-            props.num_keys, props.key_radius,
+            props.num_keys, auto_radius,
             props.key_padding, props.min_key_spacing,
             context, cut_plane
         )
@@ -770,10 +793,15 @@ class OBJECT_OT_AddKeysOperator(Operator):
             for coll in key_B.users_collection:
                 coll.objects.unlink(key_B)
             keys_B_col.objects.link(key_B)
-            
-            # Add copy transforms constraint
-            constraint = key_B.constraints.new(type='COPY_TRANSFORMS')
-            constraint.target = key_A
+
+            # Slightly enlarge the indentation key for better fit
+            key_B.scale *= 1.03
+
+            # Keep location/rotation synced but preserve scale
+            c_loc = key_B.constraints.new(type='COPY_LOCATION')
+            c_loc.target = key_A
+            c_rot = key_B.constraints.new(type='COPY_ROTATION')
+            c_rot.target = key_A
 
         props.mold_state = 'KEYS_ADDED'
         
